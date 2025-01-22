@@ -1,5 +1,7 @@
 #%%
 import pandas as pd
+from stock import sell, buy
+
 
 def grid_trading(data, total_amount, buy_decrease_percent, sell_increase_percent, buy_amount_limit, sell_amount_limit, daily_increase_percent, session_increase_percent, maxDayUse):
     """
@@ -22,8 +24,8 @@ def grid_trading(data, total_amount, buy_decrease_percent, sell_increase_percent
     session_prices = {}  # 本次交易的开盘价，格式为 {code: 开盘价}
 
     data['datetime'] = pd.to_datetime((data['time'].astype(str).str[:12]), format='%Y%m%d%H%M')
-    data['close'] = data['close']/10000
-    data['open'] = data['open']/10000
+    data['close'] = data['close']
+    data['open'] = data['open']
     data.sort_values(by='datetime', inplace=True)  # 确保数据按时间排序
 
     date = data['date'][0]
@@ -37,6 +39,8 @@ def grid_trading(data, total_amount, buy_decrease_percent, sell_increase_percent
     todayUse = 0
     todayGet = 0
     todayBuyQuantity = 0
+
+    cost = 0
 
     # 遍历每五分钟的交易数据
     for index, row in data.iterrows():
@@ -61,6 +65,7 @@ def grid_trading(data, total_amount, buy_decrease_percent, sell_increase_percent
             date = row['date']
 
 
+
         # 如果是第一天，初始化last_prices和session_prices
         if code not in last_prices:
             last_prices[code] = close
@@ -72,8 +77,8 @@ def grid_trading(data, total_amount, buy_decrease_percent, sell_increase_percent
         sell_threshold = last_prices[code] * (1 + sell_increase_percent)
 
         # 计算当日增幅和本次涨幅
-        daily_increase = (close - openDaily) / openDaily
-        session_increase = (close - session_prices[code]) / session_prices[code]
+        daily_increase = (close - openDaily) / openDaily * 100
+        session_increase = (close - session_prices[code]) / session_prices[code] * 100
         percent += session_increase
 
         # print(f"现金：{cash}; ", end='')
@@ -83,8 +88,19 @@ def grid_trading(data, total_amount, buy_decrease_percent, sell_increase_percent
         # print(f"当日增幅：{daily_increase:.4f}; ", end='')
         # print(f"本次涨幅：{session_increase:.4f}; ")
 
+        if (ableSold + todayBuyQuantity) > 0:
+            cost = (total_amount - cash) / (ableSold + todayBuyQuantity)
+
+        current_flow = 0
+        if cost != 0:
+            current_flow = (close - cost) / cost * 100
+
+        print(f"成本: {cost:.4f},  售价: {close:.4f}  当前流动：{current_flow:.4f}")
+
+
+
         # 检查是否满足买入条件
-        if (close <= buy_threshold or daily_increase < daily_increase_percent)and cash > 0 and maxDayUse > todayUse:
+        if (current_flow < daily_increase_percent)and cash > 0 and maxDayUse > todayUse:
             # print(daily_increase < daily_increase_percent)
             # print(f"满足买入条件 {daily_increase_percent} > {daily_increase} openDa: {openDaily}")
             # print(close <= buy_threshold)
@@ -95,10 +111,12 @@ def grid_trading(data, total_amount, buy_decrease_percent, sell_increase_percent
             buy_quantity = buy_amount // close  # 使用close作为买入价格计算买入数量
             if buy_quantity > 0:
                 # 更新现金和持仓
+                print(f"买入{buy_quantity}股")
                 cash -= buy_quantity * close
                 cash -= buy_quantity * close * 0.0085
                 todayUse += buy_quantity * close
                 todayBuyQuantity += buy_quantity
+                buy(code, buy_quantity, row['datetime'], close, cash, ableSold)
                 if code in positions:
                     old_quantity, old_cost, old_buy_time = positions[code]
                     new_cost = (old_cost * old_quantity + buy_quantity * close) / (old_quantity + buy_quantity)
@@ -111,7 +129,7 @@ def grid_trading(data, total_amount, buy_decrease_percent, sell_increase_percent
             # print(f"{close} > {sell_threshold}", end="   ")
             # print(close >= sell_threshold)
             # 确保在T+1日才能卖出
-            if close >= sell_threshold or daily_increase >= session_increase_percent:
+            if current_flow >= sell_increase_percent or current_flow >= sell_increase_percent:
                 # print("符合卖出条件")
                 # 确保每次卖出的金额不超过sell_amount_limit
                 sell_amount = min(ableSold, sell_amount_limit/close)  # 每次卖出的最大金额限制
@@ -122,6 +140,8 @@ def grid_trading(data, total_amount, buy_decrease_percent, sell_increase_percent
                     todayGet += sell_quantity_to_sell * close
                     ableSold -= sell_quantity_to_sell
                     cash -= sell_quantity_to_sell * close*0.0085
+
+                    sell(code, sell_quantity_to_sell, row['datetime'], close, cash, ableSold)
                     # print("卖出")
 
         # 更新上一交易日的收盘价和本次交易的开盘价
@@ -130,30 +150,36 @@ def grid_trading(data, total_amount, buy_decrease_percent, sell_increase_percent
         session_prices[code] = row['close']
 
     # 计算最终的总收益
-    total_value = cash
-    for code, (quantity, cost, buy_time) in positions.items():
-        total_value += quantity * data[data['code'] == code]['close'].iloc[-1]
+    total_value = cash + ((todayBuyQuantity + ableSold) * row['close'])
 
     total_profit = total_value - total_amount
     print(f"\n最终总收益：{total_profit} 元")
     # print(f"\n最终现金：{cash} 元")
     return total_profit
 
-
-# 调用函数
 #%%
-# data = pd.read_csv("D:/sz.399310(2023-01-01^2024-12-31).csv")
-data = pd.read_csv("D:/history_A_stock_k_data.csv")
+# 调用函数
 
-total_amount = 1000  # 总金额
-buy_decrease_percent = -0.01  # 降价2%
+# data = pd.read_csv("D:/sz.399310(2023-01-01^2024-12-31).csv")
+# data = pd.read_csv("D:/sz.002031.csv")
+data = pd.read_csv("D:/sz.399310.csv")
+
+total_amount = 10000  # 总金额
+buy_decrease_percent = -0.05  # 降价2%
 sell_increase_percent = 0.01  # 涨价2%
-maxDayUse = 50
+
+buy_amount_limit = 1000
+sell_amount_limit = 1000
+maxDayUse = 100
 print(f"{data["date"][0]} ---  {data['date'][data['date'].size - 1]}   ")
 print(f"本金为：{total_amount}", end="")
-total_profit = grid_trading(data, total_amount, buy_decrease_percent, sell_increase_percent, 1000, 1000, buy_decrease_percent, sell_increase_percent, maxDayUse)
+data['close'] = data['close'] / 10000
+data['open'] = data['open'] / 10000
+total_profit = grid_trading(data, total_amount, buy_decrease_percent, sell_increase_percent, buy_amount_limit, sell_amount_limit, buy_decrease_percent, sell_increase_percent, maxDayUse)
 
 
 print("收益率为 ", end="")
 
 print(total_profit / total_amount * 100, end="%")
+#%%
+data['open']

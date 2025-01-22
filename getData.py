@@ -14,7 +14,9 @@ print('login respond  error_msg:'+lg.error_msg)
 # 详细指标参数，参见“历史行情指标参数”章节；“分钟线”参数与“日线”参数不同。“分钟线”不包含指数。
 # 分钟线指标：date,time,code,open,high,low,close,volume,amount,adjustflag
 # 周月线指标：date,code,open,high,low,close,volume,amount,adjustflag,turn,pctChg
-rs = bs.query_history_k_data_plus("sz.300337",
+
+code = 'sz.002031'
+rs = bs.query_history_k_data_plus(code,
     "date,time,code,open,high,low,close,volume,amount,adjustflag",
     start_date='2020-06-16', end_date='2024-12-26',
     frequency="30", adjustflag="3")
@@ -30,7 +32,7 @@ result = pd.DataFrame(data_list, columns=rs.fields)
 
 print(result.size)
 #### 结果集输出到csv文件 ####
-result.to_csv("D:\\history_A_stock_k_data.csv", index=False)
+result.to_csv("D:\\" + code + ".csv", index=False)
 print(result)
 
 #### 登出系统 ####
